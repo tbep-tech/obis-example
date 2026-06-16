@@ -47,7 +47,7 @@ R packages (install once):
 
 ```r
 install.packages(c("dplyr", "tidyr", "readr", "lubridate", "sf", "worrms",
-                   "tbeptools", "here"))
+                   "tbeptools", "here", "obistools"))
 ```
 
 For OBIS API queries only:
@@ -66,7 +66,10 @@ install.packages(c("httr2", "jsonlite"))
    - Resolve all taxa to accepted WoRMS names via the `worrms` package
    - Write three CSV files to `dwc/`
 3. After the run, inspect `species_lookup` in your R session to confirm all
-   WoRMS matches are correct before proceeding.
+   WoRMS matches are correct. Known ambiguous genera (where WoRMS returns
+   multiple accepted records) are pinned to specific AphiaIDs via the
+   `aphia_overrides` vector near the top of section 2. Add entries there
+   for any additional ambiguous names you encounter.
 
 ## Darwin Core Archive structure
 
@@ -131,8 +134,10 @@ occurrence row in the eMoF file.
 ## Before submitting to OBIS
 
 - [ ] Confirm all WoRMS matches in `species_lookup` are correct
-- [ ] Fill in NERC P01 vocabulary codes for `measurementTypeID` fields in
-      `emof.csv` (placeholders are marked `# VERIFY` in the script)
+- [ ] Confirm remaining NERC P01 `measurementTypeID` codes in `emof.csv` —
+      blade length (`OBSINDLX`) and shoot density (`SDBIOL02`) are resolved;
+      Braun-Blanquet cover, epiphyte density, and sediment type still need
+      codes (request via [github.com/nvs-vocabs/OBISVocabs](https://github.com/nvs-vocabs/OBISVocabs/issues))
 - [ ] Register the dataset at [obis.org](https://obis.org) to obtain a
       `datasetID` UUID, then update `DATASET_ID` in the configuration block
 - [ ] Author EML metadata (required alongside the CSVs — see the

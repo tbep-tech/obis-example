@@ -22,6 +22,7 @@ library(sf)
 library(worrms)
 library(tbeptools)
 library(here)
+library(obistools)
 
 transect_sf <- trnpts
 # trnsct <- read_transect(raw = T)
@@ -34,7 +35,7 @@ trnsct <- read.csv(here('data', 'trnsct.csv'))
 # ---------------------------------------------------------------------------
 
 INSTITUTION_CODE <- "TBEP"
-DATASET_NAME     <- "Tampa Bay Seagrass Transect Monitoring"  # VERIFY
+DATASET_NAME     <- "Tampa Bay Interagency Seagrass Monitoring Program"  # VERIFY
 COLLECTION_CODE  <- "seagrass"
 DATASET_ID       <- ""        # OBIS will assign this UUID after registration
 LICENSE          <- "https://creativecommons.org/licenses/by/4.0/"  # VERIFY
@@ -65,8 +66,9 @@ dat <- trnsct |>
   left_join(transect_locs, by = "Transect") |>
   mutate(
     Species = gsub('^.*\\:\\s|\\n$', '', Species),
-    Species = gsub('spp\\.$', '', Species),
-    Species = gsub('(^Ulva).*', '\\1', Species),
+    Species = gsub('\\s+spp\\.$', '', Species),
+    Species = gsub('intestinales$', 'intestinalis', Species),
+    # Species = gsub('(^Ulva).*', '\\1', Species),
     # Map informal drift algae field codes to accepted WoRMS taxon names
     Species = case_when(
       trimws(tolower(Species)) == "drift brown" ~ "Phaeophyceae",
@@ -74,9 +76,17 @@ dat <- trnsct |>
       trimws(tolower(Species)) == "drift reds"  ~ "Rhodophyta",
       trimws(tolower(Species)) == "drift red" ~ "Rhodophyta",
       Species == 'Lyngbya/Dapis' ~ 'Dapis',
+      Species == 'Halodule' ~ 'Halodule wrightii',
+      Species == 'Thalassia' ~ 'Thalassia testudinum',
+      Species == 'Ruppia' ~ 'Ruppia maritima',
+      Species == 'Syringodium' ~ 'Syringodium filiforme',
+      Species == 'Ulva fasciata' ~ 'Ulva lactuca',
       TRUE ~ Species
     )
-  )
+  ) |>
+  group_by(IDall) |>
+  mutate(transect_date = min(as.Date(ymd_hms(ObservationDate, quiet = TRUE)), na.rm = TRUE)) |>
+  ungroup()
 
 # ---------------------------------------------------------------------------
 # 2. Resolve taxa to WoRMS
@@ -91,11 +101,24 @@ message("Looking up ", length(presence_species), " taxa in WoRMS...")
 worms_raw        <- wm_records_names(name = presence_species, fuzzy = TRUE, marine_only = TRUE)
 names(worms_raw) <- presence_species
 
+# Pinned AphiaIDs for taxa where WoRMS returns multiple accepted matches.
+# Maps the Species name (as it appears in dat) to the correct AphiaID.
+aphia_overrides <- c(
+  "Chondria"     = 143906L,
+  "Digenea"      = 143909L,
+  "Polysiphonia" = 143853L,
+  "Ulva"         = 144296L,
+  "Halophila"    = 144192L
+)
+
 species_lookup <- bind_rows(worms_raw, .id = "Species") |>
   filter(status == "accepted") |>
+  mutate(override_id = aphia_overrides[Species]) |>
+  filter(is.na(override_id) | AphiaID == override_id) |>
   group_by(Species) |>
   slice(1) |>
   ungroup() |>
+  select(-override_id) |>
   transmute(
     Species,
     scientificName   = scientificname,
@@ -139,7 +162,7 @@ base_cols <- dat |>
     occurrenceID         = paste(INSTITUTION_CODE, COLLECTION_CODE, ID, sep = ":"),
     parentEventID        = paste(INSTITUTION_CODE, COLLECTION_CODE, "event",
                                  Transect,
-                                 as.Date(ymd_hms(ObservationDate, quiet = TRUE)),
+                                 transect_date,
                                  sep = ":"),
     eventID              = paste(INSTITUTION_CODE, COLLECTION_CODE, "event",
                                  Transect,
@@ -158,14 +181,14 @@ base_cols <- dat |>
     waterBody            = BaySegment,
     locality             = paste(BaySegment, Transect),
     locationID           = paste(INSTITUTION_CODE, COLLECTION_CODE, "loc", Transect, Site, sep = ":"),
-    samplingProtocol     = "seagrass transect point-intercept survey",
+    samplingProtocol     = "seagrass transect survey",
     institutionCode      = INSTITUTION_CODE,
     datasetName          = DATASET_NAME,
     collectionCode       = COLLECTION_CODE,
     datasetID            = DATASET_ID,
     geodeticDatum        = "EPSG:4326",
     license              = LICENSE,
-    recordedBy           = Crew,
+    recordedBy           = MonitoringAgency,
     eventType            = "Point"
   )
 
@@ -223,13 +246,15 @@ occurrence <- bind_rows(presence_occ, absence_occ)
 # 5. Build ExtendedMeasurementOrFact (eMoF) extension
 # ---------------------------------------------------------------------------
 
-# Extract the leading integer from SpeciesAbundance, e.g. "2 = 6%-25%" -> 2
-extract_cover_code <- function(x) as.integer(sub("^(\\d+).*", "\\1", trimws(x)))
-
 emof_src <- base_cols |>
   filter(Species != "No Cover", !is.na(Species), Species != "") |>
   inner_join(select(species_lookup, Species), by = "Species") |>
-  mutate(cover_code = extract_cover_code(SpeciesAbundance))
+  mutate(
+    cover_value   = trimws(sub("\\s*=.*$", "", SpeciesAbundance)),
+    cover_remarks = ifelse(grepl("=", SpeciesAbundance, fixed = TRUE),
+                           trimws(sub("^[^=]+=\\s*", "", SpeciesAbundance)),
+                           NA_character_)
+  )
 
 # Helper: pivot one measurement per occurrence row into eMoF long format
 make_emof <- function(df, type, type_id, value_col, unit, unit_id) {
@@ -245,22 +270,40 @@ make_emof <- function(df, type, type_id, value_col, unit, unit_id) {
     )
 }
 
-# P01 vocabulary codes — VERIFY these against https://vocab.nerc.ac.uk/
+# P01 vocabulary codes from https://vocab.nerc.ac.uk/collection/P01/current/
+#
+# cover_code    — Braun-Blanquet ordinal class (0-5), not a true percentage.
+#                 PCOV7736 ("Proportion coverage...") is the nearest accepted term
+#                 but expects % values; left blank here. Request a BB-specific term
+#                 at https://github.com/nvs-vocabs/OBISVocabs/issues if needed.
+# BladeLength   — OBSINDLX: "Length of biological entity specified elsewhere" (mm)
+# ShootDensity  — SDBIOL02: "Abundance of biological entity specified elsewhere
+#                 per unit area of the bed" (n m-2)
+# EpiphyteDensity / SedimentType — no accepted P01 code; left blank.
+#                 Request terms via https://github.com/nvs-vocabs/OBISVocabs/issues
+
 emof <- bind_rows(
-  make_emof(emof_src,
-    "seagrass percent cover (Braun-Blanquet class)",
-    "",           # No standard P01 code for BB class; leave blank or use a local term
-    "cover_code", "Braun-Blanquet scale", ""),
+  emof_src |>
+    filter(!is.na(cover_value), cover_value != "") |>
+    transmute(
+      occurrenceID       = occurrenceID,
+      measurementType    = "seagrass percent cover (Braun-Blanquet scale)",
+      measurementTypeID  = "",
+      measurementValue   = cover_value,
+      measurementUnit    = "Braun-Blanquet scale",
+      measurementUnitID  = "",
+      measurementRemarks = cover_remarks
+    ),
 
   make_emof(emof_src |> filter(BladeLength_Avg > 0),
     "seagrass blade length arithmetic mean",
-    "",           # VERIFY P01 code
+    "http://vocab.nerc.ac.uk/collection/P01/current/OBSINDLX/",
     "BladeLength_Avg", "mm",
     "http://vocab.nerc.ac.uk/collection/P06/current/UXMM/"),
 
   make_emof(emof_src |> filter(ShootDensity_Avg > 0),
     "seagrass shoot density arithmetic mean",
-    "",           # VERIFY P01 code
+    "http://vocab.nerc.ac.uk/collection/P01/current/SDBIOL02/",
     "ShootDensity_Avg", "shoots m-2",
     "http://vocab.nerc.ac.uk/collection/P06/current/UPMS/"),
 
@@ -291,8 +334,10 @@ parent_events <- base_cols |>
     eventID              = parentEventID,
     parentEventID        = NA_character_,
     eventType            = "Transect",
-    eventDate            = format(as.Date(ymd_hms(ObservationDate, quiet = TRUE)), "%Y-%m-%d"),
-    year, month, day,
+    eventDate            = format(transect_date, "%Y-%m-%d"),
+    year                 = year(transect_date),
+    month                = month(transect_date),
+    day                  = day(transect_date),
     decimalLatitude, decimalLongitude, geodeticDatum,
     minimumDepthInMeters = NA_real_,
     maximumDepthInMeters = NA_real_,
@@ -327,4 +372,29 @@ message(
   "  5. Validate at https://obis.org/manual/processing/ before upload"
 )
 
-# obistools::check_eventids(occurrence)
+# qc with obistools
+
+# # check species - note that this only checks those that are ambiguous from worms
+# # not those that are have more than one in your actual data
+# match_taxa(unique(occurrence$scientificName))
+
+# # check all required fiels are presnt
+# chk <- check_fields(event)
+
+# # check coords are in correct region
+# plot_map_leaflet(event)
+
+# # check depth of records (within expected range)
+# check_depth(event, report = T, depthmargin = 20)
+
+# # check event dates
+# check_eventdate(event)
+
+# # check event ids
+# check_eventids(event)
+
+# # check extension event ids
+# check_extension_eventids(event, emof)
+# check_extension_eventids(event, occurrence)
+
+# Hmisc::describe(event)
