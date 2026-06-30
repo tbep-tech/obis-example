@@ -57,7 +57,8 @@ load(here('data', 'strlocs.rda'))
 
 transect_bearing <- transect_lines |>
   st_drop_geometry() |>
-  select(Transect = Site, bearing)
+  select(Transect = Site, bearing) |>
+  distinct(Transect, .keep_all = TRUE)
 
 transect_bearing <- bind_rows(
   transect_bearing,
