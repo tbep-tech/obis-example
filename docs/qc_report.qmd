@@ -138,6 +138,26 @@ if (is.null(issues) || nrow(issues) == 0) {
 }
 ```
 
+## Occurrence ID integrity
+
+`occurrenceID` must be unique across `occurrence.csv` — OBIS uses it as the
+stable identifier for each record, and duplicates indicate the conversion script
+fanned out rows it shouldn't have (e.g. via a one-to-many join upstream). This
+check is not part of `obistools`, so it's done here with plain `dplyr`.
+
+```{r}
+#| label: check-occurrenceid-duplicates
+issues <- occurrence |>
+  count(occurrenceID, name = "n") |>
+  filter(n > 1)
+
+if (nrow(issues) == 0) {
+  cat("No issues found.\n")
+} else {
+  datatable(issues, rownames = FALSE, options = list(pageLength = 15))
+}
+```
+
 ## Extension linkage
 
 These checks verify that the identifier fields in the extension files all reference
