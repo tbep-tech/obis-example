@@ -3,7 +3,7 @@
 Materials for the OBIS June 2026 workshop. This repository demonstrates how to
 convert field monitoring data from the Tampa Bay Interagency Seagrass Monitoring
 Program into Darwin Core Archive format for submission to the Ocean Biodiversity
-Information System (OBIS).
+Information System (OBIS).  The archived data can be accessed [here](https://obis.org/dataset/2cfa5ef4-90e5-4c2f-8acf-578bf2e3f477).
 
 ## Background
 
