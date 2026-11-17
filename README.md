@@ -166,6 +166,30 @@ occurrence row in the eMoF file.
 5. Add metadata, can link from data if mappings are present and correct, otherwise enter manually
 6. Publish! Any issues to correct will be apparent.  Correct them, then try again.
 
+## Updating an existing dataset
+
+The published dataset is updated in place by publishing a new version of the
+existing IPT resource. Do not create a new resource.
+
+1. Source `R/convert_to_dwc.R`.  Make sure the `read_transect()` and
+   `write.csv()` lines near the top are uncommented (lines 28, 30).  Sourcing 
+   the R script will regenerate the files in `dwc/`. Check `species_lookup` for any
+   new taxa.
+2. Render `docs/qc_report.qmd` and confirm there are no new issues.
+3. Log in to the [OBIS IPT](https://ipt-obis.gbif.us/) and open the existing
+   resource from "Manage Resources".
+4. Upload the new event.csv, occurrence.csv, and emof.csv using the same file
+   names and choose to replace the existing source files.
+5. Confirm the Darwin Core mappings are still complete. They carry over if the
+   column names have not changed.
+6. Update the metadata as needed, especially the temporal coverage.
+7. Publish the resource and add a short summary of the changes. OBIS picks up
+   the new version at its next harvest, which can take a few days.
+
+Records are matched across versions by `eventID` and `occurrenceID`. Keep
+`INSTITUTION_CODE` and `COLLECTION_CODE` unchanged so updated records replace
+the old ones rather than appearing as duplicates.
+
 ## References
 
 - OBIS manual: https://manual.obis.org/

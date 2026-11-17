@@ -25,9 +25,9 @@ library(here)
 
 transect_sf    <- trnpts
 transect_lines <- trnlns
-# trnsct <- read_transect(raw = T)
+trnsct <- read_transect(raw = T)
 
-# write.csv(trnsct, here('data', 'trnsct.csv'), row.names = FALSE)
+write.csv(trnsct, here('data', 'trnsct.csv'), row.names = FALSE)
 trnsct <- read.csv(here('data', 'trnsct.csv'))
 
 # ---------------------------------------------------------------------------
@@ -37,7 +37,7 @@ trnsct <- read.csv(here('data', 'trnsct.csv'))
 INSTITUTION_CODE <- "TBEP"
 DATASET_NAME     <- "Tampa Bay Interagency Seagrass Monitoring Program"  # VERIFY
 COLLECTION_CODE  <- "seagrass"
-DATASET_ID       <- ""        # OBIS will assign this UUID after registration
+DATASET_ID       <- "https://ipt-obis.gbif.us/resource?r=tbismp" # this was added after the first dataset was published
 LICENSE          <- "https://creativecommons.org/licenses/by/4.0/"  # VERIFY
 
 # Taxon to attach "No Cover" absence records to.
