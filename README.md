@@ -179,11 +179,13 @@ existing IPT resource. Do not create a new resource.
 3. Log in to the [OBIS IPT](https://ipt-obis.gbif.us/) and open the existing
    resource from "Manage Resources".
 4. Upload the new event.csv, occurrence.csv, and emof.csv using the same file
-   names and choose to replace the existing source files.
+   names and choose to replace the existing source files.  Do this by selecting
+   `+ Add` under the Source Data section, do not delete the older files.
 5. Confirm the Darwin Core mappings are still complete. They carry over if the
    column names have not changed.
 6. Update the metadata as needed, especially the temporal coverage.
-7. Publish the resource and add a short summary of the changes. OBIS picks up
+7. Publish the resource and add a short summary of the changes. The summary of changes
+   can be added in a dialog that pops up after the publish button is selectted. OBIS picks up
    the new version at its next harvest, which can take a few days.
 
 Records are matched across versions by `eventID` and `occurrenceID`. Keep
